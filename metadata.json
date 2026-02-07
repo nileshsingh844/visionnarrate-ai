@@ -1,0 +1,9 @@
+{
+  "name": "VisionNarrate AI | Enterprise Narrative Engine",
+  "description": "Production-grade long-form video synthesis platform grounded in real product recordings using Multi-LLM inheritance and V-JEPA scene representation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ],
+  "prompt": "Design a grounded, production-grade video generation platform for technical products."
+}
