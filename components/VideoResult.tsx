@@ -83,15 +83,15 @@ export default function VideoResult({ videoUrl, audioUrl, chapters, onNewVideo }
     return () => { audioContextRef.current?.close(); };
   }, [audioUrl]);
 
+  // Ensure video re-loads if URL changes and apply state
   useEffect(() => {
-    if (gainNodeRef.current) gainNodeRef.current.gain.value = isMuted ? 0 : volume;
     if (videoRef.current) {
+      videoRef.current.load();
       videoRef.current.volume = volume;
       videoRef.current.muted = isMuted;
       videoRef.current.playbackRate = playbackSpeed;
     }
-    if (audioSourceRef.current) audioSourceRef.current.playbackRate.value = playbackSpeed;
-  }, [volume, isMuted, playbackSpeed]);
+  }, [videoUrl, volume, isMuted, playbackSpeed]);
 
   const stopAudio = useCallback(() => {
     if (audioSourceRef.current) {
@@ -116,7 +116,9 @@ export default function VideoResult({ videoUrl, audioUrl, chapters, onNewVideo }
   const togglePlay = () => {
     if (!videoRef.current) return;
     if (videoRef.current.paused) {
-      videoRef.current.play();
+      videoRef.current.play().catch(e => {
+        console.error("Video playback failed:", e);
+      });
       playAudio();
       setIsPlaying(true);
     } else {
@@ -139,6 +141,11 @@ export default function VideoResult({ videoUrl, audioUrl, chapters, onNewVideo }
       setCurrentTime(time);
       if (isPlaying) playAudio();
     }
+  };
+
+  const handleVideoError = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    const error = (e.target as HTMLVideoElement).error;
+    console.error("CRITICAL_VIDEO_RENDER_FAULT:", error?.message || "Unknown rendering error", error?.code);
   };
 
   return (
@@ -174,6 +181,8 @@ export default function VideoResult({ videoUrl, audioUrl, chapters, onNewVideo }
                ref={videoRef} 
                src={videoUrl} 
                onTimeUpdate={handleTimeUpdate}
+               onLoadedMetadata={() => setDuration(videoRef.current?.duration || 0)}
+               onError={handleVideoError}
                onEnded={() => { setIsPlaying(false); stopAudio(); }}
                onClick={togglePlay}
                className="w-full h-full object-cover cursor-pointer" 
@@ -265,6 +274,7 @@ export default function VideoResult({ videoUrl, audioUrl, chapters, onNewVideo }
                   const segmentStart = (idx / chapters.length) * duration;
                   const segmentEnd = ((idx + 1) / chapters.length) * duration;
                   const isActive = currentTime >= segmentStart && currentTime < segmentEnd;
+                  const score = c.metadata?.importanceScore || 0;
                   
                   return (
                     <div 
@@ -277,14 +287,26 @@ export default function VideoResult({ videoUrl, audioUrl, chapters, onNewVideo }
                         <div className="flex items-center gap-3">
                            <div className="flex flex-col items-end">
                               <span className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Importance</span>
-                              <span className="text-[10px] font-mono font-black text-slate-400">0.92</span>
+                              <span className="text-[10px] font-mono font-black text-slate-400">{score.toFixed(2)}</span>
                            </div>
                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500/40"></div>
                         </div>
                       </div>
+
+                      {/* Calibrated Importance Bar */}
+                      <div className="w-full h-1 bg-white/5 rounded-full mb-4 overflow-hidden">
+                        <div 
+                          className="h-full bg-indigo-500 transition-all duration-1000"
+                          style={{ width: `${score * 100}%` }}
+                        ></div>
+                      </div>
+
                       <h4 className="text-[15px] font-black text-white group-hover/chapter:text-indigo-300 transition-colors mb-2 tracking-tight">{c.title}</h4>
+                      
                       <div className="flex flex-wrap gap-2 mb-4">
-                         <span className="text-[8px] font-black bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-lg text-indigo-400 uppercase tracking-[0.1em]">Grounded_Visual</span>
+                         <span className="text-[8px] font-black bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-lg text-indigo-400 uppercase tracking-[0.1em]">
+                           {c.metadata?.visualEvent || 'Scene_Stable'}
+                         </span>
                          <span className="text-[8px] font-black bg-white/5 border border-white/10 px-2.5 py-1 rounded-lg text-slate-500 uppercase tracking-[0.1em]">V-JEPA_Synced</span>
                       </div>
                       <p className="text-[11px] text-slate-500 leading-relaxed font-medium italic opacity-80 line-clamp-2 hover:line-clamp-none transition-all">"{c.narrationScript}"</p>
