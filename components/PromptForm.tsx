@@ -14,8 +14,10 @@ import {
   SparklesIcon, 
   ArrowRightIcon, 
   FilmIcon,
-  XMarkIcon
+  XMarkIcon,
+  FileImageIcon
 } from './icons';
+import { Settings2, AlertCircle } from 'lucide-react';
 
 export default function PromptForm({ onGenerate }: { onGenerate: (c: PipelineConfig) => void }) {
   const [product, setProduct] = useState({
@@ -36,6 +38,8 @@ export default function PromptForm({ onGenerate }: { onGenerate: (c: PipelineCon
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [manualVjepa, setManualVjepa] = useState('');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -72,10 +76,10 @@ export default function PromptForm({ onGenerate }: { onGenerate: (c: PipelineCon
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onGenerate({ product, goal, recordings: uploadedFiles });
+    onGenerate({ product, goal, recordings: uploadedFiles, manualVjepa: manualVjepa.trim() || undefined });
   };
 
-  const isFormValid = product.name && product.coreProblem && (uploadedFiles.length > 0);
+  const isFormValid = product.name && product.coreProblem && (uploadedFiles.length > 0 || manualVjepa.length > 10);
 
   return (
     <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-12 gap-10 w-full max-w-7xl mx-auto items-start">
@@ -138,68 +142,83 @@ export default function PromptForm({ onGenerate }: { onGenerate: (c: PipelineCon
         </div>
 
         <div className="p-10 bg-indigo-500/[0.04] border border-indigo-500/10 rounded-[48px] flex flex-col gap-6 shadow-2xl group transition-all hover:bg-indigo-500/[0.06]">
-          <div className="flex items-center gap-4">
-            <FilmIcon className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition-transform" />
-            <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-300">Product Recordings (Visual Ingest)</h3>
-          </div>
-          <p className="text-xs text-slate-500 leading-relaxed font-medium">
-            Attach screen recordings. Our V-JEPA layer uses these as the ONLY source of visual truth. No synthetic hallucinations allowed.
-          </p>
-          <div className="flex flex-col gap-5">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <input 
-                type="file" 
-                multiple 
-                accept="video/*" 
-                className="hidden" 
-                ref={fileInputRef} 
-                onChange={handleFileChange}
-              />
-              <button 
-                type="button" 
-                disabled={isUploading}
-                onClick={() => fileInputRef.current?.click()}
-                className="flex-grow flex items-center justify-center gap-3 px-8 py-5 bg-white text-black hover:bg-slate-200 disabled:opacity-50 transition-all rounded-2xl font-black text-xs uppercase tracking-[0.2em]"
-              >
-                {isUploading ? 'Ingesting Media...' : 'Upload Ground Truth Files'}
-              </button>
+              <FilmIcon className="w-6 h-6 text-indigo-400 group-hover:scale-110 transition-transform" />
+              <h3 className="text-sm font-black uppercase tracking-[0.3em] text-slate-300">Visual Ingest & Resiliency</h3>
             </div>
-
-            {isUploading && (
-              <div className="w-full space-y-3 animate-in fade-in slide-in-from-top-2 duration-500">
-                <div className="flex justify-between items-center px-1">
-                  <span className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em]">Uploading Assets...</span>
-                  <span className="text-[10px] font-mono text-indigo-400 font-bold">{Math.round(uploadProgress || 0)}%</span>
-                </div>
-                <div className="w-full h-2 bg-indigo-950/30 rounded-full overflow-hidden border border-indigo-500/10">
-                  <div 
-                    className="h-full bg-indigo-500 transition-all duration-300 shadow-[0_0_15px_rgba(79,70,229,0.4)]"
-                    style={{ width: `${uploadProgress}%` }}
-                  ></div>
-                </div>
-              </div>
-            )}
-
-            {uploadedFiles.length > 0 && !isUploading && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                {uploadedFiles.map((fileName, idx) => (
-                  <div key={idx} className="flex items-center justify-between gap-3 bg-white/5 border border-white/10 px-4 py-3 rounded-xl text-[10px] text-slate-300 font-mono group/file">
-                    <div className="flex items-center gap-2 truncate">
-                       <FilmIcon className="w-3 h-3 text-indigo-500" />
-                       <span className="truncate">{fileName}</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={() => removeFile(idx)}
-                      className="text-slate-600 hover:text-red-400 transition-colors"
-                    >
-                      <XMarkIcon className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <button 
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${showAdvanced ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-white/5 text-slate-500 border border-white/5'}`}
+            >
+              <Settings2 className="w-3 h-3" />
+              Manual V-JEPA Override
+            </button>
           </div>
+          
+          {!showAdvanced ? (
+            <>
+              <p className="text-xs text-slate-500 leading-relaxed font-medium">
+                Attach screen recordings. Our V-JEPA layer uses these as the ONLY source of visual truth. No synthetic hallucinations allowed.
+              </p>
+              <div className="flex flex-col gap-5">
+                <div className="flex items-center gap-4">
+                  <input 
+                    type="file" 
+                    multiple 
+                    accept="video/*" 
+                    className="hidden" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange}
+                  />
+                  <button 
+                    type="button" 
+                    disabled={isUploading}
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex-grow flex items-center justify-center gap-3 px-8 py-5 bg-white text-black hover:bg-slate-200 disabled:opacity-50 transition-all rounded-2xl font-black text-xs uppercase tracking-[0.2em]"
+                  >
+                    {isUploading ? 'Ingesting Media...' : 'Upload Ground Truth Files'}
+                  </button>
+                </div>
+
+                {uploadedFiles.length > 0 && !isUploading && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                    {uploadedFiles.map((fileName, idx) => (
+                      <div key={idx} className="flex items-center justify-between gap-3 bg-white/5 border border-white/10 px-4 py-3 rounded-xl text-[10px] text-slate-300 font-mono group/file">
+                        <div className="flex items-center gap-2 truncate">
+                          <FilmIcon className="w-3 h-3 text-indigo-500" />
+                          <span className="truncate">{fileName}</span>
+                        </div>
+                        <button 
+                          type="button" 
+                          onClick={() => removeFile(idx)}
+                          className="text-slate-600 hover:text-red-400 transition-colors"
+                        >
+                          <XMarkIcon className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="space-y-4 animate-in fade-in zoom-in-95 duration-500">
+              <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <p className="text-[10px] text-amber-500 font-bold uppercase tracking-widest leading-relaxed">
+                  Resilience Mode: Paste V-JEPA Grounding JSON here to skip token-heavy analysis. Useful for retries or teammate collaborations.
+                </p>
+              </div>
+              <textarea 
+                className="w-full h-48 bg-black/60 border border-amber-500/20 rounded-2xl px-6 py-5 font-mono text-[10px] text-amber-200 focus:ring-2 focus:ring-amber-500 transition-all outline-none resize-none placeholder:text-amber-900/50"
+                placeholder='[{"scene_id": 1, "visual_event": "..."}]'
+                value={manualVjepa}
+                onChange={e => setManualVjepa(e.target.value)}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -250,10 +269,6 @@ export default function PromptForm({ onGenerate }: { onGenerate: (c: PipelineCon
                 value={goal.durationMinutes}
                 onChange={e => setGoal({...goal, durationMinutes: parseInt(e.target.value)})}
               />
-              <div className="flex justify-between text-[8px] text-slate-700 font-mono font-bold uppercase">
-                <span>1 MIN (Fast)</span>
-                <span>30 MIN (Deep)</span>
-              </div>
             </div>
           </div>
 
@@ -269,10 +284,6 @@ export default function PromptForm({ onGenerate }: { onGenerate: (c: PipelineCon
                  <ArrowRightIcon className="w-5 h-5 text-white group-hover:translate-x-1 transition-transform" />
               </div>
             </button>
-            <div className="flex justify-center items-center gap-3 mt-6">
-               <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-               <p className="text-[10px] text-slate-500 uppercase tracking-[0.3em] font-mono font-bold">Systems_Grounded: READY</p>
-            </div>
           </div>
         </div>
       </div>

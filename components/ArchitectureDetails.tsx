@@ -9,8 +9,8 @@ import { Layers, Database, Cpu, Share2, Activity } from 'lucide-react';
 export default function ArchitectureDetails() {
   const steps = [
     {
-      title: 'V-JEPA Representation',
-      desc: 'Self-supervised temporal learning on ground-truth product recordings.',
+      title: 'V-JEPA 2 Representation',
+      desc: 'As of mid-2025, the latest and most optimized version of Meta’s Video Joint-Embedding Predictive Architecture.',
       icon: <Cpu className="w-5 h-5 text-indigo-400" />,
       tag: 'ML CORE'
     },

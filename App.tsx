@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useCallback, useEffect, useState } from 'react';
-import { Terminal, ShieldCheck, ShieldAlert, Sparkles, Database } from 'lucide-react';
+import { Terminal, ShieldCheck, ShieldAlert, Sparkles, Database, FileJson, Download, CheckCircle2, Archive } from 'lucide-react';
 import ApiKeyDialog from './components/ApiKeyDialog';
 import LoadingIndicator from './components/LoadingIndicator';
 import PromptForm from './components/PromptForm';
 import VideoResult from './components/VideoResult';
 import ArchitectureDetails from './components/ArchitectureDetails';
 import ObservabilityPanel from './components/ObservabilityPanel';
+import ProductionArchive from './components/ProductionArchive';
+import { KeyIcon } from './components/icons';
 import { runVisionNarratePipeline, forensicLogAnalysis } from './services/geminiService';
 import {
   AppState,
@@ -23,18 +25,31 @@ const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(AppState.IDLE);
   const [pipelineProgress, setPipelineProgress] = useState({ message: '', percent: 0 });
   const [result, setResult] = useState<GenerationResult | null>(null);
+  const [history, setHistory] = useState<GenerationResult[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [fixesApplied, setFixesApplied] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [forensicAnalysis, setForensicAnalysis] = useState<string | null>(null);
   const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   const [showObservability, setShowObservability] = useState(true);
+  const [injectionType, setInjectionType] = useState<'LOCAL' | 'PLATFORM' | 'NONE'>('NONE');
 
   useEffect(() => {
     const checkApiKey = async () => {
+      if (process.env.API_KEY && process.env.API_KEY !== 'undefined') {
+        setInjectionType('LOCAL');
+        setAppState(AppState.IDLE);
+        return;
+      }
+
       if (window.aistudio) {
         try {
-          if (!(await window.aistudio.hasSelectedApiKey())) setShowApiKeyDialog(true);
+          if (await window.aistudio.hasSelectedApiKey()) {
+            setInjectionType('PLATFORM');
+          } else {
+            setShowApiKeyDialog(true);
+          }
         } catch (error) {
           setShowApiKeyDialog(true);
         }
@@ -42,6 +57,26 @@ const App: React.FC = () => {
     };
     checkApiKey();
   }, []);
+
+  const handleSwitchKey = async () => {
+    if (window.aistudio) {
+      await window.aistudio.openSelectKey();
+      setInjectionType('PLATFORM');
+    }
+  };
+
+  const handleDownloadVjepa = () => {
+    const vjepaLog = logs.find(l => l.artifact?.stage === 'GROUNDING');
+    if (vjepaLog?.artifact?.payload) {
+      const dataStr = JSON.stringify(vjepaLog.artifact.payload, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      const exportFileDefaultName = `vjepa_analysis_trace_${new Date().getTime()}.json`;
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileDefaultName);
+      linkElement.click();
+    }
+  };
 
   const handleGenerate = useCallback(async (config: PipelineConfig) => {
     setAppState(AppState.INGESTION);
@@ -56,17 +91,24 @@ const App: React.FC = () => {
         setPipelineProgress({ message, percent });
         if (newLog) setLogs(prev => [...prev, newLog]);
       });
-      setResult(output);
+
+      const finalOutput = {
+        ...output,
+        id: `MASTER_${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
+        timestamp: new Date().toISOString(),
+        productName: config.product.name
+      };
+
+      setResult(finalOutput);
+      setHistory(prev => [finalOutput, ...prev]);
       setAppState(AppState.SUCCESS);
     } catch (error: any) {
       console.error('Pipeline crashed:', error);
-      
-      // Fix: Adhere to guidelines for handling "Requested entity was not found." error by prompting key selection.
-      if (error.message?.includes("Requested entity was not found.")) {
-        window.aistudio?.openSelectKey();
+      const errorMsg = error.message || '';
+      if (errorMsg.includes("Requested entity was not found.")) {
+        handleSwitchKey();
       }
-      
-      setErrorMessage(error.message || 'System architectural failure');
+      setErrorMessage(errorMsg || 'System architectural failure');
       setAppState(AppState.ERROR);
     }
   }, []);
@@ -85,10 +127,33 @@ const App: React.FC = () => {
     setForensicAnalysis(null);
   };
 
+  const handleSelectFromArchive = (item: GenerationResult) => {
+    setResult(item);
+    setLogs(item.logs);
+    setAppState(AppState.SUCCESS);
+    setShowArchive(false);
+  };
+
+  const handleRemoveFromArchive = (id: string) => {
+    setHistory(prev => prev.filter(item => item.id !== id));
+  };
+
+  const isQuotaError = errorMessage?.includes("429") || errorMessage?.includes("RESOURCE_EXHAUSTED");
+  const hasVjepaArtifact = logs.some(l => l.artifact?.stage === 'GROUNDING');
+
   return (
     <div className="min-h-screen bg-[#050505] text-slate-100 flex flex-col font-sans selection:bg-indigo-500/30 overflow-x-hidden">
       {showApiKeyDialog && (
-        <ApiKeyDialog onContinue={() => { setShowApiKeyDialog(false); window.aistudio?.openSelectKey(); }} />
+        <ApiKeyDialog onContinue={() => { setShowApiKeyDialog(false); handleSwitchKey(); }} />
+      )}
+
+      {showArchive && (
+        <ProductionArchive 
+          history={history} 
+          onSelect={handleSelectFromArchive} 
+          onRemove={handleRemoveFromArchive}
+          onClose={() => setShowArchive(false)} 
+        />
       )}
       
       <header className="sticky top-0 z-50 w-full bg-[#050505]/90 backdrop-blur-xl border-b border-white/5 py-6 px-12 flex justify-center">
@@ -102,13 +167,46 @@ const App: React.FC = () => {
               <p className="text-[9px] text-indigo-400 uppercase tracking-[0.5em] font-black">Transparency_Engine_V3.5</p>
             </div>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={() => setShowArchive(true)}
+              className="relative flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 transition-all"
+            >
+              <Archive className="w-4 h-4" />
+              Archive
+              {history.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-indigo-600 text-white text-[8px] font-black px-1.5 py-0.5 rounded-full ring-2 ring-[#050505] animate-in zoom-in">
+                  {history.length}
+                </span>
+              )}
+            </button>
+            {hasVjepaArtifact && (
+              <button 
+                onClick={handleDownloadVjepa}
+                className="flex items-center gap-3 px-6 py-3 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-amber-500 transition-all shadow-xl shadow-amber-500/5 animate-in fade-in slide-in-from-top-1"
+                title="Download Grounded Scene Metadata (V-JEPA 2)"
+              >
+                <Download className="w-4 h-4" />
+                <span className="hidden md:inline">Download V-JEPA 2</span>
+              </button>
+            )}
+            <button 
+              onClick={handleSwitchKey}
+              className={`flex items-center gap-3 px-6 py-3 border rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all ${
+                isQuotaError 
+                ? 'bg-indigo-600 border-indigo-400 text-white animate-pulse shadow-[0_0_20px_rgba(99,102,241,0.5)]' 
+                : 'bg-white/5 hover:bg-white/10 border-white/10 text-slate-300'
+              }`}
+            >
+              <KeyIcon className="w-4 h-4" />
+              Switch Key
+            </button>
             <button 
               onClick={() => setShowObservability(!showObservability)}
               className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 transition-all"
             >
               <Terminal className="w-4 h-4" />
-              {showObservability ? 'Collapse Pipeline' : 'Inspect Pipeline'}
+              Inspect
             </button>
           </div>
         </div>
@@ -151,13 +249,6 @@ const App: React.FC = () => {
                           <p className="text-xs text-slate-500 leading-relaxed font-medium">Every LLM prompt is visible, copyable, and version-tracked.</p>
                        </div>
                     </div>
-                    <div className="flex items-start gap-6 group/item">
-                       <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-[12px] font-black text-emerald-500 group-hover/item:scale-110 transition-transform">A</div>
-                       <div className="flex-grow">
-                          <p className="text-sm font-black text-slate-200 uppercase tracking-widest mb-1">Artifact Audit</p>
-                          <p className="text-xs text-slate-500 leading-relaxed font-medium">JSON chapter plans and segment prompts persisted for manual reuse.</p>
-                       </div>
-                    </div>
                  </div>
               </div>
             </div>
@@ -168,11 +259,22 @@ const App: React.FC = () => {
         ) : (
           <div className="flex-grow flex flex-col items-center justify-center py-12">
             {(appState !== AppState.SUCCESS && appState !== AppState.ERROR && appState !== AppState.FORENSIC) && (
-              <LoadingIndicator 
-                customStatus={pipelineProgress.message} 
-                progress={pipelineProgress.percent}
-                state={appState}
-              />
+              <div className="w-full flex flex-col items-center gap-8">
+                <LoadingIndicator 
+                  customStatus={pipelineProgress.message} 
+                  progress={pipelineProgress.percent}
+                  state={appState}
+                />
+                {hasVjepaArtifact && appState !== AppState.ANALYSIS && (
+                  <button 
+                    onClick={handleDownloadVjepa}
+                    className="flex items-center gap-3 px-8 py-4 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-500 rounded-3xl text-[10px] font-black uppercase tracking-[0.3em] transition-all animate-in fade-in duration-1000"
+                  >
+                    <Download className="w-4 h-4" />
+                    Export V-JEPA Grounding Trace (JSON)
+                  </button>
+                )}
+              </div>
             )}
 
             {appState === AppState.FORENSIC && (
@@ -191,12 +293,15 @@ const App: React.FC = () => {
             )}
             
             {appState === AppState.SUCCESS && result && (
-              <VideoResult
-                videoUrl={result.finalVideoUrl}
-                audioUrl={result.finalAudioUrl || null}
-                chapters={result.chapters}
-                onNewVideo={handleReset}
-              />
+              <div className="w-full flex flex-col items-center gap-8 animate-in fade-in duration-700">
+                <VideoResult
+                  videoUrl={result.finalVideoUrl}
+                  audioUrl={result.finalAudioUrl || null}
+                  chapters={result.chapters}
+                  transcript={result.transcript}
+                  onNewVideo={handleReset}
+                />
+              </div>
             )}
 
             {appState === AppState.ERROR && (
@@ -204,14 +309,32 @@ const App: React.FC = () => {
                 <div className="w-24 h-24 bg-red-500/20 rounded-[32px] flex items-center justify-center mx-auto mb-10">
                   <ShieldAlert className="text-red-500 w-12 h-12" />
                 </div>
-                <h3 className="text-4xl font-black text-white mb-6 uppercase tracking-tight italic">Pipeline Interrupted</h3>
-                <p className="text-slate-400 text-xl mb-10 leading-relaxed font-medium">{errorMessage}</p>
+                <h3 className="text-4xl font-black text-white mb-6 uppercase tracking-tight italic">
+                  {isQuotaError ? 'Quota Exceeded' : 'Pipeline Interrupted'}
+                </h3>
+                <p className="text-slate-400 text-xl mb-10 leading-relaxed font-medium">
+                  {isQuotaError 
+                    ? "Your project is at capacity. To resume, switch keys OR download the analysis data below to resume manually later." 
+                    : errorMessage}
+                </p>
                 <div className="flex flex-col gap-4">
+                   {hasVjepaArtifact && (
+                      <button 
+                        onClick={handleDownloadVjepa}
+                        className="w-full flex items-center justify-center gap-3 px-12 py-5 bg-amber-600 text-white hover:bg-amber-500 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.3em] shadow-xl shadow-amber-600/20"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download V-JEPA 2 Analysis (JSON)
+                      </button>
+                   )}
+                   <button 
+                     onClick={handleSwitchKey} 
+                     className="w-full px-12 py-5 bg-indigo-600 text-white hover:bg-indigo-500 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.3em] shadow-xl shadow-indigo-600/20"
+                   >
+                     {isQuotaError ? 'Select Different Project' : 'Switch API Key / Project'}
+                   </button>
                    <button onClick={handleReset} className="w-full px-12 py-5 bg-white text-black hover:bg-slate-200 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.3em]">
                      Re-Initialize System
-                   </button>
-                   <button onClick={handleForensicDeepDive} className="w-full px-12 py-5 bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 rounded-2xl transition-all font-black text-xs uppercase tracking-[0.3em]">
-                     View Artifact Forensic Trace
                    </button>
                 </div>
               </div>
@@ -225,10 +348,6 @@ const App: React.FC = () => {
           <div className="flex flex-wrap gap-12 uppercase font-black tracking-[0.3em]">
             <span className="flex items-center gap-3">ENGINE: <span className="text-indigo-400">VISION_NARRATE_V3.5</span></span>
             <span className="flex items-center gap-3">AUDIT: <span className="text-emerald-500">GROUNDED_PERSISTENCE_ON</span></span>
-          </div>
-          <div className="flex gap-10 items-center">
-            <span className="text-slate-500 font-black">© 2025 VisionNarrate AI | Transparent Architecture</span>
-            <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]"></div>
           </div>
         </div>
       </footer>

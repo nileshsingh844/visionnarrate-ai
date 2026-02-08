@@ -15,7 +15,8 @@ import {
   Activity,
   Copy,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react';
 
 interface ObservabilityPanelProps {
@@ -36,10 +37,21 @@ export default function ObservabilityPanel({ logs, state, onAnalyze, fixesApplie
     }
   }, [logs, selectedArtifact]);
 
-  const handleCopy = (text: string) => {
-    navigator.clipboard.writeText(typeof text === 'string' ? text : JSON.stringify(text, null, 2));
+  const handleCopy = (payload: any) => {
+    const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+    navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadArtifact = (artifact: Artifact) => {
+    const dataStr = typeof artifact.payload === 'string' ? artifact.payload : JSON.stringify(artifact.payload, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    const exportFileDefaultName = `${artifact.stage.toLowerCase()}_artifact_${artifact.id}.json`;
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
   };
 
   return (
@@ -91,14 +103,23 @@ export default function ObservabilityPanel({ logs, state, onAnalyze, fixesApplie
                 </div>
                 <div className="flex items-center gap-2">
                    <button 
+                     onClick={() => handleDownloadArtifact(selectedArtifact)}
+                     className="p-2 hover:bg-white/10 rounded-lg text-slate-400 transition-colors"
+                     title="Download Artifact as JSON"
+                   >
+                     <Download className="w-4 h-4" />
+                   </button>
+                   <button 
                      onClick={() => handleCopy(selectedArtifact.payload)}
                      className="p-2 hover:bg-white/10 rounded-lg text-slate-400 transition-colors"
+                     title="Copy to Clipboard"
                    >
                      {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
                    </button>
                    <button 
                      onClick={() => setSelectedArtifact(null)}
                      className="p-2 hover:bg-white/10 rounded-lg text-slate-400 transition-colors"
+                     title="Close Inspector"
                    >
                      <AlertCircle className="w-4 h-4 rotate-45" />
                    </button>

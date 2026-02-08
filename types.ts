@@ -31,7 +31,6 @@ export enum VideoTone {
 
 export type LLMTier = 'TIER_0' | 'TIER_1' | 'TIER_2' | 'TIER_3' | 'TIER_4';
 
-// Fix: Missing LLMModelInfo interface definition exported for service layer orchestration
 export interface LLMModelInfo {
   id: string;
   name: string;
@@ -85,12 +84,17 @@ export interface PipelineConfig {
     audience: string;
   };
   recordings: string[];
+  manualVjepa?: string; // Support for manual JSON copy-paste
 }
 
 export interface GenerationResult {
+  id: string;
+  timestamp: string;
+  productName: string;
   chapters: Chapter[];
   finalVideoUrl: string;
   finalAudioUrl?: string | null;
+  transcript: string;
   totalDuration: number;
   logs: LogEntry[];
   fixesApplied: number;

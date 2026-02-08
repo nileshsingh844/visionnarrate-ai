@@ -1,3 +1,4 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -11,40 +12,29 @@ interface ApiKeyDialogProps {
 
 const ApiKeyDialog: React.FC<ApiKeyDialogProps> = ({ onContinue }) => {
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 border border-gray-700 rounded-2xl shadow-xl max-w-lg w-full p-8 text-center flex flex-col items-center">
-        <div className="bg-indigo-600/20 p-4 rounded-full mb-6">
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50 p-4">
+      <div className="bg-[#0A0A0A] border border-white/10 rounded-[40px] shadow-[0_0_100px_rgba(0,0,0,0.5)] max-w-lg w-full p-12 text-center flex flex-col items-center ring-1 ring-white/10">
+        <div className="bg-indigo-600/20 p-6 rounded-3xl mb-8 ring-1 ring-indigo-500/30">
           <KeyIcon className="w-12 h-12 text-indigo-400" />
         </div>
-        <h2 className="text-3xl font-bold text-white mb-4">Paid API Key Required for Veo</h2>
-        <p className="text-gray-300 mb-6">
-          Veo is a paid-only video generation model. To use this feature, please select an API key associated with a paid Google Cloud project that has billing enabled.
+        <h2 className="text-3xl font-black text-white mb-4 tracking-tighter uppercase">Project Key Required</h2>
+        {/* Added mandatory billing documentation link */}
+        <p className="text-slate-400 mb-6 font-medium leading-relaxed">
+          Veo synthesis requires a paid API key. In this environment, you do not paste strings directly. 
+          <br/><br/>
+          To use a teammate's key, click below and <strong>select their project</strong> in the secure system dialog that appears.
+          For more information, see the <a href="https://ai.google.dev/gemini-api/docs/billing" target="_blank" rel="noopener noreferrer" className="text-indigo-400 underline hover:text-indigo-300">billing documentation</a>.
         </p>
-        <p className="text-gray-400 mb-8 text-sm">
-          For more information, see the{' '}
-          <a
-            href="https://ai.google.dev/gemini-api/docs/billing"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-indigo-400 hover:underline font-medium"
-          >
-            how to enable billing
-          </a>{' '}
-          and{' '}
-          <a
-            href="https://ai.google.dev/gemini-api/docs/pricing#veo-3"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-indigo-400 hover:underline font-medium"
-          >
-            Veo pricing
-          </a>.
-        </p>
+        <div className="bg-white/5 border border-white/5 p-4 rounded-2xl mb-8 w-full">
+           <p className="text-[10px] text-slate-500 font-mono font-bold uppercase tracking-widest">
+             Platform Security Policy: Keys managed via Project Selector
+           </p>
+        </div>
         <button
           onClick={onContinue}
-          className="w-full px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg transition-colors text-lg"
+          className="w-full px-8 py-5 bg-indigo-600 hover:bg-indigo-500 text-white font-black rounded-2xl transition-all text-xs uppercase tracking-[0.3em] shadow-2xl shadow-indigo-600/30"
         >
-          Continue to Select a Paid API Key
+          Open Project Selector
         </button>
       </div>
     </div>

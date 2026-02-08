@@ -26,6 +26,7 @@ import {
   Volume2,
   VolumeX,
   X,
+  ExternalLink
 } from 'lucide-react';
 
 const defaultProps = {
@@ -114,6 +115,10 @@ export const VolumeXIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
 
 export const MaximizeIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
   <Maximize {...defaultProps} {...props} />
+);
+
+export const ExternalLinkIcon: React.FC<React.SVGProps<SVGSVGElement>> = (props) => (
+  <ExternalLink {...defaultProps} {...props} />
 );
 
 // This icon had a different stroke width in the original file, so we preserve it.
