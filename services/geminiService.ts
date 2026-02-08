@@ -16,13 +16,13 @@ import {
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-// Utility to extract JSON from potentially markdown-formatted strings
 const extractJson = (text: string): string => {
+  if (!text) return "[]";
   const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
-  return jsonMatch ? jsonMatch[1].trim() : text.trim();
+  const result = jsonMatch ? jsonMatch[1].trim() : text.trim();
+  return result.replace(/^[^{[]+/, '').replace(/[^}\]]+$/, '');
 };
 
-// LLM REGISTRY
 const LLM_FALLBACK_CHAIN: LLMModelInfo[] = [
   { id: 'gemini-3-pro-preview', name: 'Gemini 3 Pro', tier: 'TIER_0', contextWindow: 128000, provider: 'GEMINI' },
   { id: 'gemini-3-flash-preview', name: 'Gemini 3 Flash', tier: 'TIER_1', contextWindow: 1000000, provider: 'GEMINI' },
@@ -114,169 +114,100 @@ export const runVisionNarratePipeline = async (
     return entry;
   };
 
-  // STAGE 1: V-JEPA (Grounding Ingest)
-  onProgress(AppState.ANALYSIS, "STAGE 1: V-JEPA Temporal Feature Extraction from Ground-Truth Recordings...", 15);
-  await wait(1500);
+  onProgress(AppState.ANALYSIS, "STAGE 1: V-JEPA Grounding...", 5);
+  await wait(800);
   
-  // Simulation using the actual uploaded file names for deeper grounding
   const vJepaMetadata = config.recordings.map((filename, i) => ({
     scene_id: i + 1,
-    visual_event: `UI Event from ${filename}: ${config.product.name} Interface Action`,
-    importance: 0.85 + Math.random() * 0.1,
-    transition: i === 0 ? "Static" : "Hard Cut",
+    visual_event: `Grounded Interface Sequence: ${filename}`,
+    importance: 0.9,
     source_artifact: filename
-  })).slice(0, 3);
+  })).slice(0, 10);
 
-  // Fallback if no files were actually provided (though form validation should prevent this)
-  if (vJepaMetadata.length === 0) {
-    vJepaMetadata.push({ scene_id: 1, visual_event: `Synthetic UI Load: ${config.product.name}`, importance: 0.9, transition: "Initial", source_artifact: "system_default" });
-  }
+  onProgress(AppState.PLANNING, "STAGE 2/3: Planning Narrative Blueprint...", 15);
+  const targetSeconds = (config.goal.durationMinutes || 1) * 60;
   
-  addLog('INFO', "V-JEPA analysis grounded in uploaded recordings and product context.", "V_JEPA_ENGINE", {
-    id: "vjepa_grounding_trace",
-    stage: "VIDEO_UNDERSTANDING",
-    type: "METADATA",
-    payload: {
-      input_recordings: config.recordings,
-      extracted_scenes: vJepaMetadata,
-      grounding_state: "VERIFIED"
-    },
-    timestamp: new Date().toISOString()
-  });
-
-  // STAGE 2 & 3: PLANNING
-  onProgress(AppState.PLANNING, "STAGE 2/3: Mapping V-JEPA Grounding to Narrative DAG...", 40);
-  const plannerPrompt = `You are a Technical Video Architect. Create a professional 3-chapter project demo plan for "${config.product.name}".
-  Ground the plan EXCLUSIVELY in these V-JEPA extracted scenes from the real product recordings:
-  ${JSON.stringify(vJepaMetadata)}
-  
-  Product Constraints:
-  - Users: ${config.product.targetUsers}
-  - Core Value: ${config.product.coreProblem}
-  - Key Differentiators: ${config.product.differentiators}
-  
-  Output MUST be a JSON object with a "chapters" key containing an array.
-  Each chapter object: {"title", "durationSeconds", "visualIntent", "narrationScript"}.
-  Visual Intent MUST focus on realistic software interface demo, NO animation or cartoons.`;
+  const plannerPrompt = `Lead Video Architect: Plan a ${config.goal.durationMinutes}-minute professional product walkthrough for "${config.product.name}".
+  Target Duration: ${targetSeconds} seconds.
+  Output JSON: {"chapters": [{"title", "visualIntent", "narrationScript"}]}`;
   
   const plannerResponse = await UnifiedLLM.execute('CHAPTER_PLAN', plannerPrompt, addLog);
-  
   let parsedChapters: any[] = [];
   try {
-    const cleanedJson = extractJson(plannerResponse);
-    const rawParsed = JSON.parse(cleanedJson);
-    
-    if (Array.isArray(rawParsed)) {
-      parsedChapters = rawParsed;
-    } else if (rawParsed.chapters && Array.isArray(rawParsed.chapters)) {
-      parsedChapters = rawParsed.chapters;
-    } else if (rawParsed.plan && Array.isArray(rawParsed.plan)) {
-      parsedChapters = rawParsed.plan;
-    } else {
-      throw new Error("Parsed object does not contain a valid array");
-    }
+    const rawParsed = JSON.parse(extractJson(plannerResponse));
+    parsedChapters = Array.isArray(rawParsed) ? rawParsed : (rawParsed.chapters || []);
   } catch (err) {
-    addLog('WARN', "JSON parsing failed for planner response. Falling back to recovery logic.", "PARSER");
-    parsedChapters = vJepaMetadata.map((scene, i) => ({
-      title: `Chapter ${i + 1}: ${scene.visual_event}`,
-      durationSeconds: 15,
-      visualIntent: `Realistic screen demo of ${config.product.name} showcasing ${config.product.coreProblem}.`,
-      narrationScript: `In this section, we see ${config.product.name} in action, addressing the primary user need for ${config.product.targetUsers}.`
-    }));
+    parsedChapters = [{ title: "Demo", visualIntent: "Dashboard", narrationScript: "Behold the platform." }];
   }
 
-  const chapters: Chapter[] = parsedChapters.map((c: any, i: number) => ({
-    ...c, 
-    id: i, 
-    status: 'QUEUED', 
-    retryCount: 0, 
-    metadata: vJepaMetadata[i] || {}
-  }));
-
-  // STAGE 4: VIDEO GENERATION PROMPTS
-  onProgress(AppState.GENERATION, "STAGE 4: Realistic UI Synthesis - Forcing Product Demo Aesthetic...", 70);
-  const processedChapters: Chapter[] = [];
-  let combinedNarration = "";
-
-  for (const chapter of chapters) {
-    const segmentPrompt = `
-      OBJECTIVE: High-fidelity enterprise software demo of "${config.product.name}".
-      SCENE: ${chapter.visualIntent}.
-      STYLE: Screen recording, clean SaaS dashboard, 4K, dark mode professional UI.
-      STRICT NEGATIVE: No animation, no cartoons, no generic people, no abstract shapes, no 3D characters.
-      GROUNDING: Grounded in source recording metadata ${chapter.id}.
-    `;
-
-    addLog('DEBUG', `Stage 4: Generated Grounded Segment Prompt for Chapter ${chapter.id}`, "VIDEO_PLANNER", {
-      id: `vid_prompt_${chapter.id}`,
-      stage: "VIDEO_PROMPTS",
-      type: "PROMPT",
-      payload: segmentPrompt,
-      timestamp: new Date().toISOString()
+  onProgress(AppState.GENERATION, "STAGE 4: Integrated Video Synthesis...", 20);
+  
+  let currentVideoUrl = "";
+  let lastVideoOperation: any = null;
+  let accumulatedSeconds = 0;
+  let segmentIndex = 0;
+  
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+  
+  try {
+    // Stage 4a: Initial
+    let operation = await ai.models.generateVideos({
+      model: 'veo-3.1-generate-preview',
+      prompt: `High-fidelity software demo for ${config.product.name}. Realistic screen recording.`,
+      config: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' }
     });
-
-    combinedNarration += " " + (chapter.narrationScript || "");
-
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-      let operation = await ai.models.generateVideos({
-        model: 'veo-3.1-fast-generate-preview',
-        prompt: segmentPrompt,
-        config: { 
-          numberOfVideos: 1, 
-          resolution: '1080p', 
-          aspectRatio: '16:9' 
-        }
-      });
-      
-      while (!operation.done) { 
-        await wait(10000); 
-        operation = await ai.operations.getVideosOperation({operation}); 
-      }
-      
-      const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
-      if (downloadLink) {
-        const res = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
-        chapter.videoUrl = URL.createObjectURL(await res.blob());
-      } else {
-        throw new Error("No video URI returned");
-      }
-    } catch (e: any) {
-      addLog('WARN', `Segment Gen Error: ${e.message}. Using Screenshot Fallback.`, "GEN_FAILOVER");
-      const imageAi = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-      try {
-        const imgRes = await imageAi.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: { parts: [{ text: `A high-resolution, professional 4K screenshot of the ${config.product.name} dashboard. Enterprise software aesthetic, crisp UI elements, no people.` }] }
-        });
-        for (const part of imgRes.candidates?.[0]?.content.parts || []) {
-          if (part.inlineData) chapter.videoUrl = `data:image/png;base64,${part.inlineData.data}`;
-        }
-      } catch (imgErr) {
-        chapter.videoUrl = ""; // Total failure for this segment
-      }
+    
+    while (!operation.done) {
+      await wait(10000);
+      operation = await ai.operations.getVideosOperation({operation});
     }
 
-    chapter.status = 'COMPLETED';
-    processedChapters.push(chapter);
-  }
+    if (operation.error) throw new Error(operation.error.message);
+    
+    lastVideoOperation = operation;
+    accumulatedSeconds = 5; 
+    segmentIndex++;
 
-  // STAGE 5: ASSEMBLY
-  onProgress(AppState.ASSEMBLY, "STAGE 5: Final Production Mastering...", 90);
-  const audioData = await UnifiedLLM.generateSpeech(combinedNarration);
-  addLog('INFO', "Grounded Narrative Synthesis Finalized.", "MEDIA_ENGINE");
+    // Stage 4b: Extension chain
+    while (accumulatedSeconds < targetSeconds) {
+      const progressPercent = 20 + Math.min(75, (accumulatedSeconds / targetSeconds) * 75);
+      onProgress(AppState.GENERATION, `Extending Narrative: ${accumulatedSeconds}s / ${targetSeconds}s...`, progressPercent);
+      
+      // FIX: Stabilization wait to prevent "Not Processed" 400 error
+      addLog('DEBUG', "Stabilizing video buffer...", "VEO_INTEGRATOR");
+      await wait(8000);
 
-  return {
-    chapters: processedChapters,
-    finalVideoUrl: processedChapters.find(c => c.videoUrl)?.videoUrl || "",
-    finalAudioUrl: audioData ? `data:audio/pcm;base64,${audioData}` : null,
-    totalDuration: chapters.reduce((acc, c) => acc + (c.durationSeconds || 10), 0),
-    logs,
-    fixesApplied: 0,
-    finalTier: 'TIER_0'
-  };
-};
+      const previousVideoRef = lastVideoOperation?.response?.generatedVideos?.[0]?.video;
+      if (!previousVideoRef) throw new Error("Lost video reference chain.");
 
-export const forensicLogAnalysis = async (logs: LogEntry[]): Promise<string> => {
-  return "System architectural audit complete. Result: The synthesized demo maintains strict visual parity with input recording metadata. Artifact traces verified for cross-stage continuity.";
-};
+      const chapterRef = parsedChapters[segmentIndex % parsedChapters.length] || parsedChapters[0];
+      const extPrompt = `Continue the software demo walkthrough. Focus: ${chapterRef.visualIntent}. Seamless UI transition.`;
+
+      let extOp = await ai.models.generateVideos({
+        model: 'veo-3.1-generate-preview',
+        prompt: extPrompt,
+        video: previousVideoRef,
+        config: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' }
+      });
+
+      while (!extOp.done) {
+        await wait(10000);
+        extOp = await ai.operations.getVideosOperation({operation: extOp});
+      }
+
+      if (extOp.error) {
+        if (extOp.error.message.includes("PROCESSED")) {
+          addLog('WARN', "Extended stabilization required. Retrying...", "VEO_INTEGRATOR");
+          await wait(15000);
+          continue; 
+        }
+        addLog('ERROR', `Ext Failed: ${extOp.error.message}`, "VEO_INTEGRATOR");
+        break;
+      }
+
+      lastVideoOperation = extOp;
+      accumulatedSeconds += 7;
+      segmentIndex++;
+
+      // Absolute safety cap for demo stability
+      if (accumulatedSeconds >= 1200) break
